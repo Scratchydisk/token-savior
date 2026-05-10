@@ -2,7 +2,7 @@
 """Export Token Savior Memory Engine data to a portable JSON backup.
 
 Usage:
-    python3 scripts/export_memory.py [--project /root/token-savior] [--output backup.json]
+    python3 scripts/export_memory.py [--project /path/to/project] [--output backup.json]
 
 If --project is omitted, exports ALL projects.
 """

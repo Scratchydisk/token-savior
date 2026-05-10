@@ -11,19 +11,9 @@ if [ "$TS_MEMORY_DISABLE" = "1" ]; then
     exit 0
 fi
 
-# -- token-savior hook error log (see GitHub #15) ---------------------------
-# Re-routes stderr from Python / claude sub-shells so a broken import, a
-# missing venv, or a corrupt DB surfaces somewhere instead of vanishing.
-# Rotates at 2 MB (keeps tail 1 MB) so it never fills the disk.
-ERR_LOG="${XDG_STATE_HOME:-$HOME/.local/state}/token-savior/hook-errors.log"
-mkdir -p "$(dirname "$ERR_LOG")" 2>/dev/null || true
-if [ -f "$ERR_LOG" ] && [ "$(stat -c%s "$ERR_LOG" 2>/dev/null || echo 0)" -gt 2000000 ]; then
-    tail -c 1000000 "$ERR_LOG" > "$ERR_LOG.tmp" 2>/dev/null && mv "$ERR_LOG.tmp" "$ERR_LOG"
-fi
-# -- end token-savior hook error log -----------------------------------------
-RESULT=$(/root/.local/token-savior-venv/bin/python3 -c "
+. "$(dirname -- "${BASH_SOURCE[0]:-$0}")/_token_savior_hook_env.sh"
+RESULT=$("$TOKEN_SAVIOR_PYTHON" -c "
 import sys, os, json
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 
 project = os.environ.get('CLAUDE_PROJECT_ROOT', '')
@@ -94,7 +84,7 @@ def _fmt_row(r):
 if rows:
     import hashlib
     from pathlib import Path as _P
-    state_file = _P('/root/.local/share/token-savior/last_injected_state.json')
+    state_file = _P('$TOKEN_SAVIOR_STATE_DIR/last_injected_state.json')
     state_file.parent.mkdir(parents=True, exist_ok=True)
     last_state = {}
     if state_file.exists():
@@ -155,9 +145,8 @@ fi
 INJECTED_CHARS=$(printf '%s' "$RESULT" | wc -c)
 INJECTED_TOKENS=$((INJECTED_CHARS / 4))
 if [ "$INJECTED_TOKENS" -gt 0 ]; then
-    /root/.local/token-savior-venv/bin/python3 -c "
+    "$TOKEN_SAVIOR_PYTHON" -c "
 import sys, os
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 project = os.environ.get('CLAUDE_PROJECT_ROOT', '')
 if not project:
@@ -183,9 +172,8 @@ if [ "$TS_HOOK_MINIMAL" = "1" ]; then
 fi
 
 # Warm start: find similar historical sessions by signature and pre-warm PPM
-WARMSTART=$(/root/.local/token-savior-venv/bin/python3 -c "
+WARMSTART=$("$TOKEN_SAVIOR_PYTHON" -c "
 import sys, os
-sys.path.insert(0, '/root/token-savior/src')
 from pathlib import Path
 from token_savior.session_warmstart import SessionWarmStart, compute_signature
 from token_savior.markov_prefetcher import PPMPrefetcher
@@ -204,7 +192,7 @@ try:
 except Exception:
     mode_name = 'code'
 
-stats_dir = Path(os.path.expanduser('~/.local/share/token-savior'))
+stats_dir = Path(os.environ.get('TOKEN_SAVIOR_STATE_DIR', os.path.expanduser('~/.local/share/token-savior')))
 ws = SessionWarmStart(stats_dir)
 
 # Embryo signature — only mode + project known, no tools yet.
@@ -232,9 +220,8 @@ if [ -n "$WARMSTART" ]; then
 fi
 
 # Tool Capture status — show recent sandbox count if table populated
-CAPTURELINE=$(/root/.local/token-savior-venv/bin/python3 -c "
+CAPTURELINE=$("$TOKEN_SAVIOR_PYTHON" -c "
 import sys, os, time
-sys.path.insert(0, '/root/token-savior/src')
 try:
     from token_savior import db_core
     conn = db_core.get_db()
@@ -256,9 +243,8 @@ if [ -n "$CAPTURELINE" ]; then
 fi
 
 # Statusline: [mem:N obs · mode:X]
-STATUSLINE=$(/root/.local/token-savior-venv/bin/python3 -c "
+STATUSLINE=$("$TOKEN_SAVIOR_PYTHON" -c "
 import sys, os
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 
 project = os.environ.get('CLAUDE_PROJECT_ROOT', '')
@@ -294,16 +280,15 @@ fi
 
 # Weekly auto-decay (fire-and-forget, background)
 (
-    FLAG=/root/.local/share/token-savior/last_decay
+    FLAG=$TOKEN_SAVIOR_STATE_DIR/last_decay
     mkdir -p "$(dirname "$FLAG")"
     NOW=$(date +%s)
     LAST=0
     [ -f "$FLAG" ] && LAST=$(cat "$FLAG" 2>/dev/null || echo 0)
     AGE=$((NOW - LAST))
     if [ "$AGE" -ge 604800 ]; then
-        /root/.local/token-savior-venv/bin/python3 -c "
+        "$TOKEN_SAVIOR_PYTHON" -c "
 import sys, os
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 
 project = os.environ.get('CLAUDE_PROJECT_ROOT', '')
@@ -327,14 +312,13 @@ if project:
     fi
 
     # Monthly Token Economy ROI garbage collection (30-day interval)
-    ROI_FLAG=/root/.local/share/token-savior/last_roi_gc
+    ROI_FLAG=$TOKEN_SAVIOR_STATE_DIR/last_roi_gc
     LAST_ROI=0
     [ -f "$ROI_FLAG" ] && LAST_ROI=$(cat "$ROI_FLAG" 2>>"$ERR_LOG" || echo 0)
     AGE_ROI=$((NOW - LAST_ROI))
     if [ "$AGE_ROI" -ge 2592000 ]; then
-        /root/.local/token-savior-venv/bin/python3 -c "
+        "$TOKEN_SAVIOR_PYTHON" -c "
 import sys
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 res = memory_db.run_roi_gc(dry_run=False)
 print(f'[roi-gc] archived={res.get(\"archived\",0)} kept={res.get(\"kept\",0)} threshold={res.get(\"threshold\",0)}', file=sys.stderr)
@@ -343,14 +327,14 @@ print(f'[roi-gc] archived={res.get(\"archived\",0)} kept={res.get(\"kept\",0)} t
     fi
 
     # Weekly markdown export (fire-and-forget)
-    EXPORT_FLAG=/root/.local/share/token-savior/last_md_export
+    EXPORT_FLAG=$TOKEN_SAVIOR_STATE_DIR/last_md_export
     LAST_EXP=0
     [ -f "$EXPORT_FLAG" ] && LAST_EXP=$(cat "$EXPORT_FLAG" 2>>"$ERR_LOG" || echo 0)
     AGE_EXP=$((NOW - LAST_EXP))
     if [ "$AGE_EXP" -ge 604800 ]; then
-        /root/.local/token-savior-venv/bin/python3 \
-            /root/token-savior/scripts/export_markdown.py \
-            --output-dir /root/memory-backup >/dev/null 2>&1
+        "$TOKEN_SAVIOR_PYTHON" \
+            "$TOKEN_SAVIOR_ROOT/scripts/export_markdown.py" \
+            --output-dir "$TOKEN_SAVIOR_EXPORT_DIR" >/dev/null 2>&1
         echo "$NOW" > "$EXPORT_FLAG"
     fi
 ) &

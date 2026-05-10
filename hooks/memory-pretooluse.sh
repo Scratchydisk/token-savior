@@ -5,16 +5,7 @@
 #   - les commandes Bash significatives (par keyword extrait de la commande)
 
 
-# -- token-savior hook error log (see GitHub #15) ---------------------------
-# Re-routes stderr from Python / claude sub-shells so a broken import, a
-# missing venv, or a corrupt DB surfaces somewhere instead of vanishing.
-# Rotates at 2 MB (keeps tail 1 MB) so it never fills the disk.
-ERR_LOG="${XDG_STATE_HOME:-$HOME/.local/state}/token-savior/hook-errors.log"
-mkdir -p "$(dirname "$ERR_LOG")" 2>/dev/null || true
-if [ -f "$ERR_LOG" ] && [ "$(stat -c%s "$ERR_LOG" 2>/dev/null || echo 0)" -gt 2000000 ]; then
-    tail -c 1000000 "$ERR_LOG" > "$ERR_LOG.tmp" 2>/dev/null && mv "$ERR_LOG.tmp" "$ERR_LOG"
-fi
-# -- end token-savior hook error log -----------------------------------------
+. "$(dirname -- "${BASH_SOURCE[0]:-$0}")/_token_savior_hook_env.sh"
 PAYLOAD=$(cat)
 
 TOOL=$(echo "$PAYLOAD" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>>"$ERR_LOG")
@@ -38,9 +29,8 @@ else
     exit 0
 fi
 
-RESULT=$(/root/.local/token-savior-venv/bin/python3 -c "
+RESULT=$("$TOKEN_SAVIOR_PYTHON" -c "
 import sys, json, re
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 
 payload = json.loads('''$PAYLOAD''')

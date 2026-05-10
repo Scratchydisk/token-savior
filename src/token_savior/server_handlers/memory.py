@@ -17,7 +17,9 @@ from __future__ import annotations
 import os
 import re as _re
 import subprocess
+import sys
 import time
+from pathlib import Path
 from typing import Any
 
 from mcp.types import TextContent
@@ -98,13 +100,14 @@ def _parse_obs_id(value: Any) -> int | None:
 
 
 def _invalidate_injection_hash() -> None:
+    state_dir = Path(os.environ.get("TOKEN_SAVIOR_STATE_DIR", "~/.local/share/token-savior")).expanduser()
     for p in (
-        "/root/.local/share/token-savior/last_injected_hash",
-        "/root/.local/share/token-savior/last_injected_state.json",
+        state_dir / "last_injected_hash",
+        state_dir / "last_injected_state.json",
     ):
         try:
-            if os.path.exists(p):
-                os.remove(p)
+            if p.exists():
+                p.unlink()
         except Exception:
             pass
 
@@ -351,11 +354,12 @@ def _mh_memory_promote(args: dict[str, Any]) -> str:
 
 
 def _mh_memory_export_md(args: dict[str, Any]) -> str:
-    out_dir = args.get("output_dir") or "/root/memory-backup"
-    script = "/root/token-savior/scripts/export_markdown.py"
+    state_dir = Path(os.environ.get("TOKEN_SAVIOR_STATE_DIR", "~/.local/share/token-savior")).expanduser()
+    out_dir = args.get("output_dir") or str(state_dir / "memory-backup")
+    script = Path(__file__).resolve().parents[3] / "scripts" / "export_markdown.py"
     try:
         proc = subprocess.run(
-            ["/root/.local/token-savior-venv/bin/python3", script, "--output-dir", out_dir],
+            [sys.executable, str(script), "--output-dir", out_dir],
             capture_output=True, text=True, timeout=60,
         )
         out = (proc.stdout or "").strip()
@@ -1210,7 +1214,7 @@ def _mh_memory_maintain(args: dict[str, Any]) -> str:
     if action == "relink":
         return _mh_memory_relink({"dry_run": args.get("dry_run", False)})
     if action == "export":
-        return _mh_memory_export_md({"output_dir": args.get("output_dir", "/root/memory-backup")})
+        return _mh_memory_export_md({"output_dir": args.get("output_dir")})
     if action == "patterns":
         return _mh_memory_patterns({
             "window_days": args.get("window_days", 14),

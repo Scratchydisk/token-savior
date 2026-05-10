@@ -18,7 +18,7 @@ Wire-up (one-time, in ``~/.claude/settings.json``):
             "matcher": "Bash|WebFetch|mcp__playwright|mcp__token-savior__search_codebase|Read",
             "hooks": [{
               "type": "command",
-              "command": "/usr/bin/python3 /root/token-savior/hooks/tool_capture_hook.py"
+              "command": "python3 \"$TOKEN_SAVIOR_ROOT/hooks/tool_capture_hook.py\""
             }]
           }
         ]

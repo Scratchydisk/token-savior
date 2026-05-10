@@ -111,6 +111,29 @@ greps automatically unless those MCP tools are used.
 Set `TS_WARM_START=1` only if you want Token Savior to build indexes at startup
 instead of waiting for first use.
 
+## Optional Memory Hooks
+
+The MCP server and the memory hooks are separate pieces. MCP-only setup gives
+Claude Code the Token Savior tools and creates/migrates `memory.db`, but it does
+not automatically archive prompts, session summaries, or tool captures. Install
+the hooks if you want lifecycle memory capture to populate `memory.db`.
+
+From the Token Savior checkout:
+
+```bash
+scripts/install-claude-hooks.sh
+```
+
+To inspect the Claude Code hook JSON before changing settings:
+
+```bash
+scripts/install-claude-hooks.sh --print
+```
+
+The installer writes absolute commands for the current checkout, so hooks do not
+depend on the original author's `/root` paths. Restart Claude Code after
+installing hooks.
+
 ## Common Gotcha
 
 Do not rely on manually adding `mcpServers` to `~/.claude/settings.json`.

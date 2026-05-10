@@ -2,11 +2,12 @@
 """Export observations to versioned markdown in a git repo.
 
 Usage:
-    python3 export_markdown.py [--output-dir /root/memory-backup]
+    python3 export_markdown.py [--output-dir ~/.local/share/token-savior/memory-backup]
 """
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -193,7 +194,13 @@ def export_all(output_dir: str) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output-dir", default="/root/memory-backup")
+    default_output = (
+        Path(os.environ.get("TOKEN_SAVIOR_EXPORT_DIR", ""))
+        if os.environ.get("TOKEN_SAVIOR_EXPORT_DIR")
+        else Path(os.environ.get("TOKEN_SAVIOR_STATE_DIR", "~/.local/share/token-savior")).expanduser()
+        / "memory-backup"
+    )
+    parser.add_argument("--output-dir", default=str(default_output))
     parser.add_argument("--project", default=None, help="(ignored — exports all)")
     args = parser.parse_args()
     res = export_all(args.output_dir)

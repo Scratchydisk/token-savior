@@ -1,4 +1,4 @@
-#!/root/.local/token-savior-venv/bin/python3
+#!/usr/bin/env python3
 """ts — standalone CLI for Token Savior memory from any terminal."""
 from __future__ import annotations
 
@@ -492,7 +492,13 @@ def build_parser() -> argparse.ArgumentParser:
     ms.set_defaults(func=cmd_mode_set)
 
     s = msub.add_parser("export")
-    s.add_argument("--output-dir", default="/root/memory-backup")
+    default_output = (
+        Path(os.environ.get("TOKEN_SAVIOR_EXPORT_DIR", ""))
+        if os.environ.get("TOKEN_SAVIOR_EXPORT_DIR")
+        else Path(os.environ.get("TOKEN_SAVIOR_STATE_DIR", "~/.local/share/token-savior")).expanduser()
+        / "memory-backup"
+    )
+    s.add_argument("--output-dir", default=str(default_output))
     s.set_defaults(func=cmd_export)
 
     s = msub.add_parser("distill", help="MDL distillation (crystallize similar obs)")

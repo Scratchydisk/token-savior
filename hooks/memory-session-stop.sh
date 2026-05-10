@@ -6,16 +6,7 @@
 # End   → 2-section structured summary (changes + memory), Telegram push, end_type=completed
 
 
-# -- token-savior hook error log (see GitHub #15) ---------------------------
-# Re-routes stderr from Python / claude sub-shells so a broken import, a
-# missing venv, or a corrupt DB surfaces somewhere instead of vanishing.
-# Rotates at 2 MB (keeps tail 1 MB) so it never fills the disk.
-ERR_LOG="${XDG_STATE_HOME:-$HOME/.local/state}/token-savior/hook-errors.log"
-mkdir -p "$(dirname "$ERR_LOG")" 2>/dev/null || true
-if [ -f "$ERR_LOG" ] && [ "$(stat -c%s "$ERR_LOG" 2>/dev/null || echo 0)" -gt 2000000 ]; then
-    tail -c 1000000 "$ERR_LOG" > "$ERR_LOG.tmp" 2>/dev/null && mv "$ERR_LOG.tmp" "$ERR_LOG"
-fi
-# -- end token-savior hook error log -----------------------------------------
+. "$(dirname -- "${BASH_SOURCE[0]:-$0}")/_token_savior_hook_env.sh"
 HOOK_MODE="${1:-stop}"
 
 # Anti-recursion: `claude -p` triggers its own Stop hook.
@@ -24,13 +15,12 @@ if [ -n "$TS_STOP_HOOK_RUNNING" ]; then
 fi
 export TS_STOP_HOOK_RUNNING=1
 
-PY=/root/.local/token-savior-venv/bin/python3
+PY="$TOKEN_SAVIOR_PYTHON"
 
 # Always clear session-scoped mode override at the very start, regardless of
 # whether the DB has any state or obs for this session. Mode is a session thing.
 "$PY" -c "
 import sys, json
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 memory_db.clear_session_override()
 # Reset activity-tracker source to 'auto' at session end
@@ -45,11 +35,10 @@ except Exception:
 # TCA — flush session co-activations into the persistent tensor.
 "$PY" -c "
 import os, sys
-sys.path.insert(0, '/root/token-savior/src')
 try:
     from pathlib import Path
     from token_savior.tca_engine import TCAEngine
-    stats_dir = Path(os.path.expanduser('~/.local/share/token-savior'))
+    stats_dir = Path(os.environ.get('TOKEN_SAVIOR_STATE_DIR', os.path.expanduser('~/.local/share/token-savior')))
     engine = TCAEngine(stats_dir)
     pairs = engine.flush_session()
     if pairs:
@@ -61,7 +50,6 @@ except Exception:
 # 1. Resolve active session + attached observations (fallback: claim orphans <2h).
 SESSION_JSON=$("$PY" -c "
 import sys, os, json, time
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 
 project = os.environ.get('CLAUDE_PROJECT_ROOT', '')
@@ -113,7 +101,6 @@ OBS_COUNT=$(echo "$SESSION_JSON" | "$PY" -c "import sys,json; print(len(json.loa
 if [ "$OBS_COUNT" -eq 0 ]; then
     "$PY" -c "
 import sys, os
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 memory_db.session_end($SESSION_ID, end_type='$HOOK_MODE' == 'end' and 'completed' or 'interrupted')
 memory_db.clear_session_override()
@@ -164,7 +151,6 @@ for o in data['obs']:
 # Check mode gates session_summary
 SUMMARY_ENABLED=$("$PY" -c "
 import sys
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 m = memory_db.get_current_mode()
 print('1' if m.get('session_summary', True) else '0')
@@ -215,7 +201,6 @@ export SS_OBS_IDS=$(echo "$SESSION_JSON" | "$PY" -c "import sys,json; print(json
 
 "$PY" -c "
 import sys, json, os
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 
 summary = sys.stdin.read().strip() or None
@@ -255,7 +240,7 @@ except Exception:
 
 # Weekly self-consistency check (7-day interval)
 (
-    CONS_FLAG=/root/.local/share/token-savior/last_consistency_check
+    CONS_FLAG=$TOKEN_SAVIOR_STATE_DIR/last_consistency_check
     mkdir -p "$(dirname "$CONS_FLAG")"
     NOW_CONS=$(date +%s)
     LAST_CONS=0
@@ -264,7 +249,6 @@ except Exception:
     if [ "$AGE_CONS" -ge 604800 ]; then
         "$PY" -c "
 import sys
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 res = memory_db.run_consistency_check(project_root='$PROJECT' or None, limit=200, dry_run=False)
 print(f'[consistency] checked={res[\"checked\"]} failed={res[\"failed\"]} quarantined={res[\"quarantined\"]} stale={res[\"stale_suspected\"]}', file=sys.stderr)
@@ -276,7 +260,6 @@ print(f'[consistency] checked={res[\"checked\"]} failed={res[\"failed\"]} quaran
 # Save session signature for cross-session warm start (all modes)
 "$PY" -c "
 import sys, os, time
-sys.path.insert(0, '/root/token-savior/src')
 from pathlib import Path
 from token_savior.session_warmstart import SessionWarmStart
 from token_savior import memory_db
@@ -308,7 +291,7 @@ try:
 
     # Derive tool_counts from PPMPrefetcher tail (recent call sequence).
     from token_savior.markov_prefetcher import PPMPrefetcher
-    stats_dir = Path(os.path.expanduser('~/.local/share/token-savior'))
+    stats_dir = Path(os.environ.get('TOKEN_SAVIOR_STATE_DIR', os.path.expanduser('~/.local/share/token-savior')))
     prefetcher = PPMPrefetcher(stats_dir)
     tool_counts = {}
     for st in prefetcher.call_sequence[-200:]:
@@ -334,7 +317,6 @@ except Exception as e:
 # Compute tokens_saved_est for session (all modes)
 "$PY" -c "
 import sys
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 sid = $SESSION_ID
 db = memory_db.get_db()
@@ -352,7 +334,6 @@ db.close()
 if [ "$HOOK_MODE" = "end" ]; then
     "$PY" -c "
 import sys, os
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 project = '$PROJECT'
 try:
@@ -371,7 +352,6 @@ fi
 if [ "$HOOK_MODE" = "end" ]; then
     "$PY" -c "
 import sys
-sys.path.insert(0, '/root/token-savior/src')
 from token_savior import memory_db
 project = '$PROJECT'
 try:
@@ -394,9 +374,9 @@ fi
 # End-of-session: backup to markdown (end mode only)
 if [ "$HOOK_MODE" = "end" ]; then
     (
-        /root/.local/token-savior-venv/bin/python3 \
-            /root/token-savior/scripts/export_markdown.py \
-            --output-dir /root/memory-backup >/dev/null 2>&1
+        "$TOKEN_SAVIOR_PYTHON" \
+            "$TOKEN_SAVIOR_ROOT/scripts/export_markdown.py" \
+            --output-dir "$TOKEN_SAVIOR_EXPORT_DIR" >/dev/null 2>&1
     ) &
 fi
 

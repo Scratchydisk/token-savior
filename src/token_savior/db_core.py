@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
 import sqlite3
 import time
@@ -17,7 +18,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-MEMORY_DB_PATH = Path.home() / ".local" / "share" / "token-savior" / "memory.db"
+_DEFAULT_STATE_DIR = Path(os.environ.get("TOKEN_SAVIOR_STATE_DIR", "~/.local/share/token-savior")).expanduser()
+MEMORY_DB_PATH = Path(os.environ.get("TOKEN_SAVIOR_MEMORY_DB", str(_DEFAULT_STATE_DIR / "memory.db"))).expanduser()
 
 _SCHEMA_PATH = Path(__file__).parent / "memory_schema.sql"
 

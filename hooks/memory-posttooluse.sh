@@ -4,21 +4,11 @@
 # - Hint de capture pour les WebFetch (research)
 
 
-# -- token-savior hook error log (see GitHub #15) ---------------------------
-# Re-routes stderr from Python / claude sub-shells so a broken import, a
-# missing venv, or a corrupt DB surfaces somewhere instead of vanishing.
-# Rotates at 2 MB (keeps tail 1 MB) so it never fills the disk.
-ERR_LOG="${XDG_STATE_HOME:-$HOME/.local/state}/token-savior/hook-errors.log"
-mkdir -p "$(dirname "$ERR_LOG")" 2>/dev/null || true
-if [ -f "$ERR_LOG" ] && [ "$(stat -c%s "$ERR_LOG" 2>/dev/null || echo 0)" -gt 2000000 ]; then
-    tail -c 1000000 "$ERR_LOG" > "$ERR_LOG.tmp" 2>/dev/null && mv "$ERR_LOG.tmp" "$ERR_LOG"
-fi
-# -- end token-savior hook error log -----------------------------------------
+. "$(dirname -- "${BASH_SOURCE[0]:-$0}")/_token_savior_hook_env.sh"
 PAYLOAD=$(cat)
 
-/root/.local/token-savior-venv/bin/python3 -c "
-import sys, json, re
-sys.path.insert(0, '/root/token-savior/src')
+"$TOKEN_SAVIOR_PYTHON" -c "
+import sys, json, os, re
 from token_savior import memory_db
 
 try:
@@ -55,17 +45,26 @@ if tool == 'Bash':
         if not m:
             continue
         obs_type, title, content, ctx = builder(m)
-        db = memory_db.get_db()
-        row = db.execute(
-            'SELECT project_root FROM observations GROUP BY project_root ORDER BY COUNT(*) DESC LIMIT 1'
-        ).fetchone()
-        db.close()
-        if not row:
+        project = (
+            os.environ.get('CLAUDE_PROJECT_ROOT')
+            or payload.get('cwd')
+            or payload.get('workspace')
+            or payload.get('project_root')
+            or os.getcwd()
+        )
+        if not project:
+            db = memory_db.get_db()
+            row = db.execute(
+                'SELECT project_root FROM observations GROUP BY project_root ORDER BY COUNT(*) DESC LIMIT 1'
+            ).fetchone()
+            db.close()
+            project = row[0] if row else ''
+        if not project:
             break
         try:
             obs_id = memory_db.observation_save(
                 session_id=None,
-                project_root=row[0],
+                project_root=project,
                 type=obs_type,
                 title=title,
                 content=content,
@@ -99,7 +98,7 @@ elif tool in ('WebFetch', 'web_fetch'):
 " <<< "$PAYLOAD" 2>>"$ERR_LOG" &
 
 # === ACTIVITY TRACKER (mode auto-detection) ===
-/root/.local/token-savior-venv/bin/python3 -c "
+"$TOKEN_SAVIOR_PYTHON" -c "
 import sys, json, os, time, re
 from pathlib import Path
 
@@ -134,7 +133,7 @@ elif short in ('run_impacted_tests', 'find_dead_code', 'detect_breaking_changes'
 else:
     sys.exit(0)
 
-tracker_path = Path.home() / '.config' / 'token-savior' / 'activity_tracker.json'
+tracker_path = Path(os.environ.get('XDG_CONFIG_HOME', str(Path.home() / '.config'))) / 'token-savior' / 'activity_tracker.json'
 tracker_path.parent.mkdir(parents=True, exist_ok=True)
 try:
     tracker = json.loads(tracker_path.read_text())
@@ -164,7 +163,6 @@ else:
 
 current_source = tracker.get('current_mode_source', 'auto')
 if suggested != tracker.get('suggested_mode') and current_source != 'manual':
-    sys.path.insert(0, '/root/token-savior/src')
     from token_savior import memory_db
     memory_db.set_mode(suggested, source='auto')
     tracker['suggested_mode'] = suggested
@@ -177,9 +175,8 @@ tracker_path.write_text(json.dumps(tracker, indent=2))
 # === A3: LLM AUTO-EXTRACT (opt-in via TS_AUTO_EXTRACT=1) ===
 # Zero-cost when unset: the shell `if` short-circuits, Python is never spawned.
 if [ "${TS_AUTO_EXTRACT:-}" = "1" ]; then
-/root/.local/token-savior-venv/bin/python3 -c "
+"$TOKEN_SAVIOR_PYTHON" -c "
 import sys, json
-sys.path.insert(0, '/root/token-savior/src')
 
 try:
     payload = json.loads(sys.stdin.read())

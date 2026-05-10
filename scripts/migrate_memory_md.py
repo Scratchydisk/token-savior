@@ -204,7 +204,7 @@ def migrate(project_root: str, memory_dir: Path, dry_run: bool = False) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Migrate .md memory files to Token Savior SQLite DB")
-    parser.add_argument("--project", required=True, help="Project root path (e.g. /root/token-savior)")
+    parser.add_argument("--project", required=True, help="Project root path (e.g. /path/to/project)")
     parser.add_argument("--memory-dir", default=str(MEMORY_DIR), help="Memory .md directory")
     parser.add_argument("--dry-run", action="store_true", help="Preview without inserting")
     args = parser.parse_args()
