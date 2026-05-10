@@ -22,12 +22,12 @@ if [ -n "$_REDACTED" ]; then
 fi
 
 # --- Synchronous injection (must complete before Claude responds) ---------
-"$TOKEN_SAVIOR_PYTHON" -c "
+printf '%s' "$PAYLOAD" | "$TOKEN_SAVIOR_PYTHON" -c "
 import sys, json, os, re
 from token_savior import memory_db
 
 try:
-    payload = json.loads('''$PAYLOAD''')
+    payload = json.loads(sys.stdin.read())
     text = (payload.get('prompt') or '').strip()
     if len(text) < 20:
         sys.exit(0)
@@ -91,12 +91,12 @@ except Exception:
 " 2>>"$ERR_LOG"
 
 # --- Reasoning Trace injection (synchronous) -----------------------------
-"$TOKEN_SAVIOR_PYTHON" -c "
+printf '%s' "$PAYLOAD" | "$TOKEN_SAVIOR_PYTHON" -c "
 import sys, json, os
 from token_savior import memory_db
 
 try:
-    payload = json.loads('''$PAYLOAD''')
+    payload = json.loads(sys.stdin.read())
     text = (payload.get('prompt') or '').strip()
     if len(text) < 20:
         sys.exit(0)
@@ -124,12 +124,12 @@ except Exception:
 " 2>>"$ERR_LOG"
 
 # --- Session mode auto-detection (synchronous, write override file) ------
-"$TOKEN_SAVIOR_PYTHON" -c "
+printf '%s' "$PAYLOAD" | "$TOKEN_SAVIOR_PYTHON" -c "
 import sys, json, os, re
 from token_savior import memory_db
 
 try:
-    payload = json.loads('''$PAYLOAD''')
+    payload = json.loads(sys.stdin.read())
     text = (payload.get('prompt') or '').strip()
     if len(text) < 3:
         sys.exit(0)
@@ -152,11 +152,11 @@ except Exception:
 " 2>>"$ERR_LOG"
 
 # --- Background: archive + trigger phrases --------------------------------
-"$TOKEN_SAVIOR_PYTHON" -c "
+printf '%s' "$PAYLOAD" | "$TOKEN_SAVIOR_PYTHON" -c "
 import sys, json, os, re
 from token_savior import memory_db
 
-payload = json.loads('''$PAYLOAD''')
+payload = json.loads(sys.stdin.read())
 text = payload.get('prompt', '')
 if len(text) < 10:
     sys.exit(0)

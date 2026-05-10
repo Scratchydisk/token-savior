@@ -8,7 +8,7 @@
 . "$(dirname -- "${BASH_SOURCE[0]:-$0}")/_token_savior_hook_env.sh"
 PAYLOAD=$(cat)
 
-TOOL=$(echo "$PAYLOAD" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>>"$ERR_LOG")
+TOOL=$(printf '%s' "$PAYLOAD" | "$TOKEN_SAVIOR_PYTHON" -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>>"$ERR_LOG")
 
 # Strip the mcp__<server>__ prefix so we can match plain names.
 SHORT_TOOL="${TOOL##*__}"
@@ -29,13 +29,13 @@ else
     exit 0
 fi
 
-RESULT=$("$TOKEN_SAVIOR_PYTHON" -c "
-import sys, json, re
+RESULT=$(printf '%s' "$PAYLOAD" | TS_HOOK_MODE="$MODE" "$TOKEN_SAVIOR_PYTHON" -c "
+import sys, json, os, re
 from token_savior import memory_db
 
-payload = json.loads('''$PAYLOAD''')
+payload = json.loads(sys.stdin.read())
 args = payload.get('tool_input', {})
-mode = '$MODE'
+mode = os.environ.get('TS_HOOK_MODE', '')
 
 db = memory_db.get_db()
 row = db.execute(
