@@ -52,6 +52,32 @@ def test_hook_config_installer_prints_current_checkout_paths() -> None:
     assert "/root/.local/token-savior-venv" not in serialized
 
 
+def test_bootstrap_help_mentions_vector_setup() -> None:
+    proc = subprocess.run(
+        [str(ROOT / "scripts" / "bootstrap-claude.sh"), "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "memory-vector" in proc.stdout
+    assert "--workspace-root" in proc.stdout
+    assert "scripts/doctor.sh" in proc.stdout
+
+
+def test_doctor_help_mentions_core_checks() -> None:
+    proc = subprocess.run(
+        [str(ROOT / "scripts" / "doctor.sh"), "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "vector stack" in proc.stdout
+    assert "Claude MCP registration" in proc.stdout
+    assert "recent hook errors" in proc.stdout
+
+
 def test_memory_userprompt_bootstraps_project_without_existing_observations() -> None:
     text = (HOOKS / "memory-userprompt.sh").read_text()
 

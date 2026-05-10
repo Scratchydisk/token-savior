@@ -3,10 +3,31 @@
 ## Install
 
 ```bash
-git clone https://github.com/Mibayy/token-savior
+git clone git@github.com:Scratchydisk/token-savior.git
 cd token-savior
+scripts/bootstrap-claude.sh --workspace-root /absolute/path/to/your/project
+```
+
+This creates `.venv`, installs MCP plus vector-search dependencies, registers
+the Claude Code MCP server, installs memory hooks, warms the embedding model,
+and runs `scripts/doctor.sh`.
+
+Restart Claude Code after bootstrap completes.
+
+## Manual Install
+
+Use this path if you want to do each step yourself:
+
+```bash
 python3 -m venv .venv
-.venv/bin/pip install -e ".[mcp]"
+.venv/bin/pip install -e ".[mcp,memory-vector]"
+```
+
+Warm the embedding model once so vector search does not need a first-use
+download:
+
+```bash
+.venv/bin/python -c "from token_savior.memory.embeddings import embed; print(len(embed('warmup')))"
 ```
 
 ## Add To Claude Code
@@ -30,6 +51,7 @@ For multiple projects, use a comma-separated `WORKSPACE_ROOTS` value:
 
 ```bash
 claude mcp list
+scripts/doctor.sh
 ```
 
 You should see:
@@ -133,6 +155,23 @@ scripts/install-claude-hooks.sh --print
 The installer writes absolute commands for the current checkout, so hooks do not
 depend on the original author's `/root` paths. Restart Claude Code after
 installing hooks.
+
+## Doctor
+
+Run the doctor whenever you want to confirm the install is still healthy:
+
+```bash
+scripts/doctor.sh
+```
+
+For a deeper check that also loads the embedding model:
+
+```bash
+scripts/doctor.sh --warmup
+```
+
+The doctor checks the venv, vector stack, vector tables, Claude MCP
+registration, hook installation, memory table counts, and recent hook errors.
 
 ## Common Gotcha
 
